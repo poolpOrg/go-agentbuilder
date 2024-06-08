@@ -3,19 +3,27 @@ package server
 import (
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/poolpOrg/go-agentbuilder/protocol"
 )
 
 type Session struct {
-	protocol *protocol.Protocol
+	sessionID uuid.UUID
+	protocol  *protocol.Protocol
 }
 
 func NewSession(conn net.Conn) *Session {
 	return &Session{
-		protocol: protocol.NewProtocol(conn),
+		sessionID: uuid.Must(uuid.NewRandom()),
+		protocol:  protocol.NewProtocol(conn),
 	}
+}
+
+func (s *Session) SessionID() uuid.UUID {
+	return s.sessionID
 }
 
 func (s *Session) LocalAddr() net.Addr {
@@ -41,7 +49,11 @@ func (s *Session) Query(payload interface{}, responseHandler func(interface{}) e
 type Server struct {
 	localAddr string
 	listener  net.Listener
-	exit      chan struct{}
+
+	sessions      map[uuid.UUID]*Session
+	sessionsMutex sync.RWMutex
+
+	exit chan struct{}
 }
 
 func NewServer(address string) *Server {
@@ -49,6 +61,17 @@ func NewServer(address string) *Server {
 		localAddr: address,
 		exit:      make(chan struct{}),
 	}
+}
+
+func (s *Server) Sessions() []*Session {
+	s.sessionsMutex.RLock()
+	defer s.sessionsMutex.RUnlock()
+
+	sessions := make([]*Session, 0, len(s.sessions))
+	for _, session := range s.sessions {
+		sessions = append(sessions, session)
+	}
+	return sessions
 }
 
 func (s *Server) ListenAndServe(handler func(*Session, <-chan protocol.Packet) error) error {
@@ -66,13 +89,19 @@ func (s *Server) ListenAndServe(handler func(*Session, <-chan protocol.Packet) e
 		}
 
 		go func() {
+			fmt.Printf("%s : connected\n", conn.RemoteAddr())
+			session := NewSession(conn)
+			s.sessionsMutex.Lock()
+			s.sessions[session.SessionID()] = session
+			s.sessionsMutex.Unlock()
+
 			defer func() {
 				fmt.Printf("%s : disconnected\n", conn.RemoteAddr())
 				conn.Close()
+				s.sessionsMutex.Lock()
+				delete(s.sessions, session.SessionID())
+				s.sessionsMutex.Unlock()
 			}()
-
-			fmt.Printf("%s : connected\n", conn.RemoteAddr())
-			session := NewSession(conn)
 
 			if err := handler(session, session.protocol.Incoming()); err != nil {
 				fmt.Printf("%s : error: %s\n", conn.RemoteAddr(), err)
