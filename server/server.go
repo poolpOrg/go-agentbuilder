@@ -38,20 +38,20 @@ func (s *Session) Query(payload interface{}, responseHandler func(interface{}) e
 	return s.protocol.Query(payload, responseHandler)
 }
 
-type server struct {
+type Server struct {
 	localAddr string
 	listener  net.Listener
 	exit      chan struct{}
 }
 
-func NewServer(address string) *server {
-	return &server{
+func NewServer(address string) *Server {
+	return &Server{
 		localAddr: address,
 		exit:      make(chan struct{}),
 	}
 }
 
-func (s *server) ListenAndServe(handler func(*Session, <-chan protocol.Packet) error) error {
+func (s *Server) ListenAndServe(handler func(*Session, <-chan protocol.Packet) error) error {
 	l, err := net.Listen("tcp", s.localAddr)
 	if err != nil {
 		return err
