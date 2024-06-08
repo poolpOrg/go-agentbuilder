@@ -35,6 +35,10 @@ func (s *Session) Request(payload interface{}) error {
 	return s.protocol.Request(payload)
 }
 
+func (s *Session) Query(payload interface{}, responseHandler func(interface{}) error) error {
+	return s.protocol.Query(payload, responseHandler)
+}
+
 type Client struct {
 	remoteAddr string
 	protocol   *protocol.Protocol
